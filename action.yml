@@ -1,0 +1,25 @@
+name: Fanfic Bookmaker
+description: Compile chapter and book HTML/DOCX exports from a scene-based writing repository.
+inputs:
+  config-file:
+    description: Optional config file at the root of the writing repo.
+    required: false
+    default: fanfic.yml
+  output-dir:
+    description: Directory where exports should be written.
+    required: false
+    default: outputs
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: python -m pip install --upgrade pip && python -m pip install -e "${{ github.action_path }}"
+
+    - name: Compile exports
+      shell: bash
+      run: >
+        python -m fanfic_bookmaker
+        --root "${{ github.workspace }}"
+        --config-file "${{ inputs.config-file }}"
+        --output-dir "${{ inputs.output-dir }}"

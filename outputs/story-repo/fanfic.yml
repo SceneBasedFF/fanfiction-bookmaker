@@ -1,0 +1,9 @@
+title: My Fanfiction Book
+author: Your Name
+subtitle: Optional subtitle
+language: en-GB
+spellcheck:
+  enabled: true
+  ignore_words:
+    - Hogwarts
+    - Hermione

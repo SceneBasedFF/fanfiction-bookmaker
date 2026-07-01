@@ -1,0 +1,9 @@
+chapter:
+  name: Example Chapter Title
+  scenes:
+    - name: "Scene One Title"
+      file: scene-one
+    - name: "Scene Two Title"
+      file: scene-two
+    - name: "Scene Three Title"
+      file: scene-three

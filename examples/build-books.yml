@@ -1,0 +1,32 @@
+name: Build books
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out writing repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile exports
+        uses: SceneBasedFF/fanfic-bookmaker@v1
+        with:
+          config-file: fanfic.yml
+          output-dir: outputs
+
+      - name: Upload exports
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-exports
+          path: outputs

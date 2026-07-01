@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fanfic-bookmaker"
+version = "0.1.0"
+description = "Compile scene-based writing repos into chapter and book HTML/DOCX exports."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Codex" }]
+dependencies = [
+  "PyYAML>=6.0.1",
+  "markdown>=3.6",
+  "beautifulsoup4>=4.12",
+  "python-docx>=1.1.2",
+  "pyspellchecker>=0.8.1",
+]
+
+[project.scripts]
+fanfic-bookmaker = "fanfic_bookmaker.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
