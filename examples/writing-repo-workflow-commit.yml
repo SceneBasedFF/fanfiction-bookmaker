@@ -1,0 +1,23 @@
+name: Build books
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - outputs/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: SceneBasedFF/fanfic-bookmaker/.github/workflows/build-books.yml@main
+    with:
+      config-file: fanfic.yml
+      output-dir: outputs
+      python-version: "3.11"
+      commit-outputs: true
+      commit-message: "chore: update generated book exports"

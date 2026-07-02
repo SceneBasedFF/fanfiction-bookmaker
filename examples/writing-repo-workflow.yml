@@ -1,0 +1,16 @@
+name: Build books
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: SceneBasedFF/fanfic-bookmaker/.github/workflows/build-books.yml@main
+    with:
+      config-file: fanfic.yml
+      output-dir: outputs
+      python-version: "3.11"
