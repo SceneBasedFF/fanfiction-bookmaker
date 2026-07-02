@@ -15,8 +15,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
-from .spellcheck import SPELLCHECK_AVAILABLE, SpellcheckConfig, SpellcheckReport, run_spellcheck
-
 
 @dataclass(slots=True)
 class Scene:
@@ -38,7 +36,6 @@ class StoryConfig:
     author: str = ""
     subtitle: str = ""
     language: str = "en-GB"
-    spellcheck: SpellcheckConfig = field(default_factory=SpellcheckConfig)
 
 
 @dataclass(slots=True)
@@ -180,31 +177,46 @@ th, td {
 """.strip()
 
 
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
     root = root.resolve()
-    config = load_config(root / config_filename)
+    config_path = safe_resolve_within(root, config_filename)
+    config = load_config(config_path)
     chapter_order = load_chapter_order(root / "chapters.yml")
     chapters = [load_chapter(root, slug) for slug in chapter_order]
 
-    output_root = (root / output_dir).resolve()
+    output_root = safe_resolve_within(root, output_dir)
     chapter_output_root = output_root / "chapters"
     assets_output_root = output_root / "assets"
     chapter_output_root.mkdir(parents=True, exist_ok=True)
     assets_output_root.mkdir(parents=True, exist_ok=True)
+
+    # Remove stale generated chapter files so renames do not leave old artifacts behind.
+    for stale_path in chapter_output_root.glob("*.html"):
+        stale_path.unlink(missing_ok=True)
+    for stale_path in chapter_output_root.glob("*.docx"):
+        stale_path.unlink(missing_ok=True)
+
+    # Remove legacy top-level outputs from older versions.
+    for stale_name in ("book.html", "book.docx", "spellcheck-report.md", "spellcheck-report.json"):
+        (output_root / stale_name).unlink(missing_ok=True)
 
     css_path = assets_output_root / "style.css"
     css_path.write_text(CSS_TEXT + "\n", encoding="utf-8")
 
     generated_files: list[Path] = [css_path]
 
-    for chapter in chapters:
+    for chapter_number, chapter in enumerate(chapters, start=1):
         chapter_markdown = compose_chapter_markdown(chapter)
-        chapter_slug = slugify(chapter.slug)
+        chapter_title = format_chapter_title(chapter_number, chapter.name)
+        chapter_slug = f"ch{chapter_number:02d}-{slugify(chapter.name, default=slugify(chapter.slug))}"
         chapter_html_path = chapter_output_root / f"{chapter_slug}.html"
         chapter_docx_path = chapter_output_root / f"{chapter_slug}.docx"
         write_html_document(
             markdown_text=chapter_markdown,
-            title=chapter.name,
+            title=chapter_title,
             output_path=chapter_html_path,
             css_href="../assets/style.css",
             language=config.language,
@@ -214,7 +226,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         write_docx_document(
             markdown_text=chapter_markdown,
             output_path=chapter_docx_path,
-            title=chapter.name,
+            title=chapter_title,
             author=config.author,
             subtitle=config.subtitle,
             language=config.language,
@@ -222,8 +234,9 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         generated_files.extend([chapter_html_path, chapter_docx_path])
 
     book_markdown = compose_book_markdown(config, chapters)
-    book_html_path = output_root / "book.html"
-    book_docx_path = output_root / "book.docx"
+    book_slug = slugify(config.title, default="book")
+    book_html_path = output_root / f"{book_slug}.html"
+    book_docx_path = output_root / f"{book_slug}.docx"
     write_html_document(
         markdown_text=book_markdown,
         title=config.title,
@@ -243,13 +256,6 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     )
     generated_files.extend([book_html_path, book_docx_path])
 
-    spellcheck_report = build_spellcheck_report(chapters, config.spellcheck)
-    spellcheck_md_path = output_root / "spellcheck-report.md"
-    spellcheck_json_path = output_root / "spellcheck-report.json"
-    spellcheck_md_path.write_text(spellcheck_report.to_markdown(), encoding="utf-8")
-    spellcheck_json_path.write_text(spellcheck_report.to_json_text(), encoding="utf-8")
-    generated_files.extend([spellcheck_md_path, spellcheck_json_path])
-
     return CompileResult(generated_files=generated_files)
 
 
@@ -268,25 +274,6 @@ def load_config(path: Path) -> StoryConfig:
         author=str(data.get("author") or ""),
         subtitle=str(data.get("subtitle") or ""),
         language=str(data.get("language") or "en-GB"),
-        spellcheck=load_spellcheck_config(data.get("spellcheck")),
-    )
-
-
-def load_spellcheck_config(value: Any) -> SpellcheckConfig:
-    if value is None:
-        return SpellcheckConfig()
-    if not isinstance(value, dict):
-        raise ValueError("spellcheck must be a mapping when present.")
-
-    ignore_words = value.get("ignore_words", [])
-    if ignore_words is None:
-        ignore_words = []
-    if not isinstance(ignore_words, list):
-        raise ValueError("spellcheck.ignore_words must be a list when present.")
-
-    return SpellcheckConfig(
-        enabled=bool(value.get("enabled", True)),
-        ignore_words=[str(item).strip() for item in ignore_words if str(item).strip()],
     )
 
 
@@ -304,7 +291,7 @@ def load_chapter_order(path: Path) -> list[str]:
     for item in chapter_list:
         if not isinstance(item, str) or not item.strip():
             raise ValueError(f"{path} contains an invalid chapter entry: {item!r}")
-        slug = item.strip()
+        slug = validate_safe_name(item.strip(), f"chapter slug in {path}")
         if slug in seen:
             raise ValueError(f"{path} contains a duplicate chapter entry: {slug}")
         seen.add(slug)
@@ -313,7 +300,8 @@ def load_chapter_order(path: Path) -> list[str]:
 
 
 def load_chapter(root: Path, slug: str) -> Chapter:
-    path = root / "chapters" / f"{slug}.yml"
+    safe_slug = validate_safe_name(slug, "chapter slug")
+    path = safe_resolve_within(root / "chapters", f"{safe_slug}.yml")
     data = read_yaml(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a chapter mapping.")
@@ -336,16 +324,14 @@ def load_chapter(root: Path, slug: str) -> Chapter:
         if not isinstance(scene_entry, dict):
             raise ValueError(f"{path} scene #{index} must be a mapping.")
         scene_name = str(scene_entry.get("name") or "").strip()
-        scene_file = str(scene_entry.get("file") or "").strip()
+        scene_file = validate_safe_name(str(scene_entry.get("file") or "").strip(), f"scene file in {path}")
         if not scene_name:
             raise ValueError(f"{path} scene #{index} is missing a name.")
-        if not scene_file:
-            raise ValueError(f"{path} scene #{index} is missing a file.")
         if scene_file in seen_files:
             raise ValueError(f"{path} contains a duplicate scene file: {scene_file}")
         seen_files.add(scene_file)
 
-        scene_path = root / "scenes" / f"{scene_file}.md"
+        scene_path = safe_resolve_within(root / "scenes", f"{scene_file}.md")
         if not scene_path.exists():
             raise FileNotFoundError(f"Missing scene file: {scene_path}")
 
@@ -363,7 +349,9 @@ def load_chapter(root: Path, slug: str) -> Chapter:
 def compose_chapter_markdown(chapter: Chapter) -> str:
     lines: list[str] = []
     for scene in chapter.scenes:
-        lines.append(f"## {scene.name}")
+        lines.append("<br>")
+        lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
+        lines.append("<br>")
         if scene.text.strip():
             lines.append(scene.text.strip())
     return "\n\n".join(lines).strip() + "\n"
@@ -372,13 +360,19 @@ def compose_chapter_markdown(chapter: Chapter) -> str:
 def compose_book_markdown(config: StoryConfig, chapters: list[Chapter]) -> str:
     lines: list[str] = []
 
-    for chapter in chapters:
-        lines.append(f"## {chapter.name}")
+    for chapter_number, chapter in enumerate(chapters, start=1):
+        lines.append(f"## {format_chapter_title(chapter_number, chapter.name)}")
         for scene in chapter.scenes:
-            lines.append(f"### {scene.name}")
+            lines.append("<br>")
+            lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
+            lines.append("<br>")
             if scene.text.strip():
                 lines.append(scene.text.strip())
     return "\n\n".join(lines).strip() + "\n"
+
+
+def format_chapter_title(chapter_number: int, chapter_name: str) -> str:
+    return f"Chapter {chapter_number}: {chapter_name}"
 
 
 def write_html_document(
@@ -671,33 +665,26 @@ def read_yaml(path: Path) -> Any:
         return yaml.safe_load(handle)
 
 
-def slugify(value: str) -> str:
+def validate_safe_name(value: str, field_name: str) -> str:
+    if not value:
+        raise ValueError(f"{field_name} cannot be empty.")
+    if not SAFE_NAME_RE.fullmatch(value):
+        raise ValueError(
+            f"{field_name} contains unsupported characters. "
+            "Use only letters, numbers, hyphens, and underscores."
+        )
+    return value
+
+
+def safe_resolve_within(base_dir: Path, relative_or_absolute: str) -> Path:
+    base_resolved = base_dir.resolve()
+    candidate = (base_resolved / relative_or_absolute).resolve()
+    if candidate != base_resolved and not candidate.is_relative_to(base_resolved):
+        raise ValueError(f"Path escapes project directory: {relative_or_absolute}")
+    return candidate
+
+
+def slugify(value: str, default: str = "chapter") -> str:
     value = value.strip().lower()
     value = re.sub(r"[^a-z0-9]+", "-", value)
-    return value.strip("-") or "chapter"
-
-
-def build_spellcheck_report(chapters: list[Chapter], spellcheck_config: SpellcheckConfig) -> SpellcheckReport:
-    if not spellcheck_config.enabled:
-        return SpellcheckReport(enabled=False, available=True, notes=["Spellcheck is disabled in fanfic.yml."])
-
-    if not SPELLCHECK_AVAILABLE:
-        return SpellcheckReport(
-            enabled=True,
-            available=False,
-            notes=["Spellcheck dependency is unavailable in this environment."],
-        )
-
-    findings = []
-    for chapter in chapters:
-        for scene in chapter.scenes:
-            findings.extend(
-                run_spellcheck(
-                    chapter_name=chapter.name,
-                    scene_name=scene.name,
-                    text=scene.text,
-                    ignore_words=spellcheck_config.ignore_words,
-                )
-            )
-
-    return SpellcheckReport(enabled=True, available=True, findings=findings)
+    return value.strip("-") or default

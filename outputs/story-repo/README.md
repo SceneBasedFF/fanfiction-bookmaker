@@ -4,7 +4,7 @@ These are the YAML files you need in your writing repo.
 
 Files in this folder:
 
-- `fanfic.yml` - optional book-level settings and spellcheck config
+- `fanfic.yml` - optional book-level settings
 - `chapters.yml` - chapter order
 - `chapters/example-chapter.yml` - chapter structure template
 - `.github/workflows/build-books.yml` - GitHub Actions workflow

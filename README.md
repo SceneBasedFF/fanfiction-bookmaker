@@ -60,11 +60,11 @@ chapters:
 chapter:
   name: Aftermath
   scenes:
-    - name: "The Great Hall"
+    - name: 'The Great Hall'
       file: the-great-hall
-    - name: "Extraction"
+    - name: 'Extraction'
       file: extraction
-    - name: "The Visit"
+    - name: 'The Visit'
       file: the-visit
 ```
 
@@ -74,23 +74,21 @@ chapter:
 
 For each chapter, the compiler writes:
 
-- `outputs/chapters/<chapter-slug>.html`
-- `outputs/chapters/<chapter-slug>.docx`
+- `outputs/chapters/ch01-<chapter-name>.html`
+- `outputs/chapters/ch01-<chapter-name>.docx`
 
 For the whole book, it writes:
 
-- `outputs/book.html`
-- `outputs/book.docx`
+- `outputs/<book-title>.html`
+- `outputs/<book-title>.docx`
 
 It also writes:
 
 - `outputs/assets/style.css`
-- `outputs/spellcheck-report.md`
-- `outputs/spellcheck-report.json`
 
 ## What the exports look like
 
-- Chapter HTML starts with the chapter title, then each scene title as a section heading.
+- Chapter HTML starts with numbered chapter titles such as `Chapter 1: Hogwarts`, then each scene title as a section heading.
 - Book HTML starts with the book title, then chapter headings, then scene headings.
 - DOCX files follow the same structure and preserve common Markdown formatting.
 
@@ -199,7 +197,7 @@ jobs:
     with:
       config-file: fanfic.yml
       output-dir: outputs
-      python-version: "3.11"
+      python-version: '3.11'
 ```
 
 ### 4. What each part means
@@ -276,9 +274,9 @@ jobs:
     with:
       config-file: fanfic.yml
       output-dir: outputs
-      python-version: "3.11"
+      python-version: '3.11'
       commit-outputs: true
-      commit-message: "chore: update generated book exports"
+      commit-message: 'chore: update generated book exports'
 ```
 
 ### Click-by-click setup for the commit-back version
@@ -304,7 +302,7 @@ What to look for on each page:
 
 Two important things to know about this version:
 
-1. It will make the repository history include the generated HTML, DOCX, CSS, and spellcheck files.
+1. It will make the repository history include the generated HTML, DOCX, and CSS files.
 2. It is more likely to create noisy history than the artifact-only version, so I recommend starting with artifacts first unless you really want the outputs versioned.
 3. The `paths-ignore: outputs/**` line is what prevents an infinite loop: when the workflow commits only files inside `outputs/`, GitHub does not start the workflow again.
 
@@ -353,17 +351,6 @@ You can also pass a custom config file:
 python -m fanfic_bookmaker --root /path/to/writing-repo --config-file fanfic.yml --output-dir outputs
 ```
 
-## British English spelling and grammar
-
-I did not hard-wire a heavy grammar service into the first version, because you asked for a free solution and this part is optional.
-
-The simplest free next step is to add a separate spellcheck job later, for example using:
-
-- the bundled spellcheck report this project now generates
-- or a stricter external checker such as `aspell` with the `en_GB` dictionary
-
-If you want, I can add that as a follow-up after you try the export pipeline once.
-
 ## How the compiler works internally
 
 The compiler does this in order:
@@ -407,41 +394,6 @@ That is expected at first. The output is still valid Word format, but the stylin
 
 1. Custom chapter and book templates.
 2. A dedicated title page.
-3. A more advanced British English spellcheck job.
+3. A separate optional British English spellcheck job.
 4. Custom front matter and back matter.
 5. Extra formatting rules for special HTML in scene files.
-
-## Spellcheck report
-
-The compiler now generates a report even when spellcheck finds problems. It does not stop the export.
-
-The report files are:
-
-- `outputs/spellcheck-report.md`
-- `outputs/spellcheck-report.json`
-
-Each finding includes:
-
-- chapter
-- scene
-- line
-- the exact word written
-- the suggested replacement
-- a small context snippet from the line
-
-You can turn spellcheck off in `fanfic.yml` if you want:
-
-```yaml
-spellcheck:
-  enabled: false
-```
-
-You can also ignore custom names or terms:
-
-```yaml
-spellcheck:
-  enabled: true
-  ignore_words:
-    - Hogwarts
-    - Hermione
-```
