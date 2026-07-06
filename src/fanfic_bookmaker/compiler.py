@@ -180,6 +180,7 @@ th, td {
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
+PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -305,7 +306,7 @@ def load_chapter_order(path: Path) -> list[str]:
 
 def load_chapter(root: Path, slug: str) -> Chapter:
     safe_slug = validate_safe_name(slug, "chapter slug")
-    path = safe_resolve_within(root / "chapters", f"{safe_slug}.yml")
+    path = resolve_referenced_file(root / "chapters", safe_slug, "yml")
     data = read_yaml(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a chapter mapping.")
@@ -335,7 +336,7 @@ def load_chapter(root: Path, slug: str) -> Chapter:
             raise ValueError(f"{path} contains a duplicate scene file: {scene_file}")
         seen_files.add(scene_file)
 
-        scene_path = safe_resolve_within(root / "scenes", f"{scene_file}.md")
+        scene_path = resolve_referenced_file(root / "scenes", scene_file, "md")
         if not scene_path.exists():
             raise FileNotFoundError(f"Missing scene file: {scene_path}")
 
@@ -667,6 +668,33 @@ def strip_scene_comments(text: str) -> str:
     lines = without_html_comments.splitlines()
     filtered_lines = [line for line in lines if not MARKDOWN_COMMENT_LINE_RE.match(line)]
     return "\n".join(filtered_lines)
+
+
+def resolve_referenced_file(base_dir: Path, reference_name: str, extension: str) -> Path:
+    exact_path = safe_resolve_within(base_dir, f"{reference_name}.{extension}")
+    if exact_path.exists():
+        return exact_path
+
+    pattern = f"*_{reference_name}.{extension}"
+    matches: list[Path] = []
+    for candidate in base_dir.glob(pattern):
+        stem = candidate.stem
+        prefix = stem[: -(len(reference_name) + 1)]
+        if PREFIX_CHAIN_RE.fullmatch(prefix):
+            matches.append(candidate.resolve())
+
+    if not matches:
+        return exact_path
+
+    unique_matches = sorted(set(matches))
+    if len(unique_matches) > 1:
+        joined = ", ".join(str(path) for path in unique_matches)
+        raise ValueError(f"Ambiguous file reference '{reference_name}.{extension}' in {base_dir}: {joined}")
+
+    match = unique_matches[0]
+    if match != base_dir.resolve() and not match.is_relative_to(base_dir.resolve()):
+        raise ValueError(f"Resolved file escapes project directory: {match}")
+    return match
 
 
 def read_yaml(path: Path) -> Any:
