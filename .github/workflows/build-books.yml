@@ -47,7 +47,7 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - name: Compile exports
-        uses: SceneBasedFF/fanfic-bookmaker@v1
+        uses: SceneBasedFF/fanfiction-bookmaker@v1
         with:
           config-file: ${{ inputs.config-file }}
           output-dir: ${{ inputs.output-dir }}

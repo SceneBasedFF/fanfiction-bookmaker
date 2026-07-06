@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    uses: SceneBasedFF/fanfic-bookmaker/.github/workflows/build-books.yml@main
+    uses: SceneBasedFF/fanfiction-bookmaker/.github/workflows/build-books.yml@main
     with:
       config-file: fanfic.yml
       output-dir: outputs
