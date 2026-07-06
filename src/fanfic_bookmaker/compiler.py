@@ -182,6 +182,7 @@ SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
 PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
+WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -204,7 +205,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         stale_path.unlink(missing_ok=True)
 
     # Remove legacy top-level outputs from older versions.
-    for stale_name in ("book.md", "book.html", "book.docx", "spellcheck-report.md", "spellcheck-report.json"):
+    for stale_name in ("book.md", "book.html", "book.docx", "book-stats.md", "spellcheck-report.md", "spellcheck-report.json"):
         (output_root / stale_name).unlink(missing_ok=True)
 
     css_path = assets_output_root / "style.css"
@@ -243,6 +244,8 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     book_md_path = output_root / f"{book_slug}.md"
     book_md_path.write_text(book_markdown, encoding="utf-8")
     root_readme_path.write_text(render_story_readme(config, book_md_path.relative_to(root)), encoding="utf-8")
+    stats_md_path = output_root / f"{book_slug}-stats.md"
+    stats_md_path.write_text(render_story_stats_markdown(config, chapters), encoding="utf-8")
     book_html_path = output_root / f"{book_slug}.html"
     book_docx_path = output_root / f"{book_slug}.docx"
     write_html_document(
@@ -262,7 +265,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         subtitle=config.subtitle,
         language=config.language,
     )
-    generated_files.extend([root_readme_path, book_md_path, book_html_path, book_docx_path])
+    generated_files.extend([root_readme_path, book_md_path, stats_md_path, book_html_path, book_docx_path])
 
     return CompileResult(generated_files=generated_files)
 
@@ -391,6 +394,54 @@ def render_story_readme(config: StoryConfig, story_markdown_relative_path: Path)
 
     lines.append(f"[Read the story]({story_markdown_relative_path.as_posix()})")
     return "\n\n".join(lines).strip() + "\n"
+
+
+def render_story_stats_markdown(config: StoryConfig, chapters: list[Chapter]) -> str:
+    lines = [f"# {config.title} Statistics", ""]
+
+    if config.author:
+        lines.append(f"**Author:** {config.author}")
+        lines.append("")
+
+    chapter_stats: list[tuple[int, Chapter, int, list[tuple[Scene, int]]]] = []
+    total_words = 0
+
+    for chapter_number, chapter in enumerate(chapters, start=1):
+        scene_stats: list[tuple[Scene, int]] = []
+        chapter_words = 0
+        for scene in chapter.scenes:
+            scene_words = count_words_in_markdown(scene.text)
+            scene_stats.append((scene, scene_words))
+            chapter_words += scene_words
+        chapter_stats.append((chapter_number, chapter, chapter_words, scene_stats))
+        total_words += chapter_words
+
+    lines.extend(
+        [
+            "## Overview",
+            "",
+            f"- Total word count: {total_words:,}",
+            f"- Total chapters: {len(chapters)}",
+            f"- Total scenes: {sum(len(chapter.scenes) for chapter in chapters)}",
+            "",
+            "## Chapter Breakdown",
+            "",
+        ]
+    )
+
+    for chapter_number, chapter, chapter_words, scene_stats in chapter_stats:
+        lines.append(f"### {format_chapter_title(chapter_number, chapter.name)}")
+        lines.append("")
+        lines.append(f"- Chapter word count: {chapter_words:,}")
+        lines.append(f"- Scene count: {len(scene_stats)}")
+        lines.append("")
+        lines.append("| Scene | Words |")
+        lines.append("| --- | ---: |")
+        for scene, scene_words in scene_stats:
+            lines.append(f"| {escape_pipe(scene.name)} | {scene_words:,} |")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_chapter_title(chapter_number: int, chapter_name: str) -> str:
@@ -680,11 +731,26 @@ def normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def count_words_in_markdown(text: str) -> int:
+    plain_text = markdown_to_plain_text(text)
+    return len(WORD_RE.findall(plain_text))
+
+
+def markdown_to_plain_text(text: str) -> str:
+    html = markdown_to_html(text)
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.get_text(" ", strip=True)
+
+
 def strip_scene_comments(text: str) -> str:
     without_html_comments = HTML_COMMENT_RE.sub("", text)
     lines = without_html_comments.splitlines()
     filtered_lines = [line for line in lines if not MARKDOWN_COMMENT_LINE_RE.match(line)]
     return "\n".join(filtered_lines)
+
+
+def escape_pipe(text: str) -> str:
+    return text.replace("|", "\\|")
 
 
 def resolve_referenced_file(base_dir: Path, reference_name: str, extension: str) -> Path:

@@ -121,6 +121,7 @@ The compiler writes files into `outputs/` inside your writing repo:
 - `README.md` at the writing repo root, containing title, author, description, and a link to the story markdown
 - `outputs/assets/style.css`
 - `outputs/<book-title>.md`
+- `outputs/<book-title>-stats.md`
 - `outputs/chapters/ch01-<chapter-name>.html`
 - `outputs/chapters/ch01-<chapter-name>.docx`
 - `outputs/<book-title>.html`
