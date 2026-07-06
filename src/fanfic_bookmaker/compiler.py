@@ -34,6 +34,7 @@ class Chapter:
 class StoryConfig:
     title: str = "Untitled Book"
     author: str = ""
+    description: str = ""
     subtitle: str = ""
     language: str = "en-GB"
 
@@ -238,8 +239,10 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
 
     book_markdown = compose_book_markdown(config, chapters)
     book_slug = slugify(config.title, default="book")
+    root_readme_path = root / "README.md"
     book_md_path = output_root / f"{book_slug}.md"
     book_md_path.write_text(book_markdown, encoding="utf-8")
+    root_readme_path.write_text(render_story_readme(config, book_md_path.relative_to(root)), encoding="utf-8")
     book_html_path = output_root / f"{book_slug}.html"
     book_docx_path = output_root / f"{book_slug}.docx"
     write_html_document(
@@ -259,7 +262,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         subtitle=config.subtitle,
         language=config.language,
     )
-    generated_files.extend([book_md_path, book_html_path, book_docx_path])
+    generated_files.extend([root_readme_path, book_md_path, book_html_path, book_docx_path])
 
     return CompileResult(generated_files=generated_files)
 
@@ -277,6 +280,7 @@ def load_config(path: Path) -> StoryConfig:
     return StoryConfig(
         title=str(data.get("title") or "Untitled Book"),
         author=str(data.get("author") or ""),
+        description=str(data.get("description") or data.get("subtitle") or ""),
         subtitle=str(data.get("subtitle") or ""),
         language=str(data.get("language") or "en-GB"),
     )
@@ -373,6 +377,19 @@ def compose_book_markdown(config: StoryConfig, chapters: list[Chapter]) -> str:
             lines.append("<br>")
             if scene.text.strip():
                 lines.append(scene.text.strip())
+    return "\n\n".join(lines).strip() + "\n"
+
+
+def render_story_readme(config: StoryConfig, story_markdown_relative_path: Path) -> str:
+    lines = [f"# {config.title}"]
+
+    if config.author:
+        lines.append(f"**Author:** {config.author}")
+
+    if config.description:
+        lines.append(config.description)
+
+    lines.append(f"[Read the story]({story_markdown_relative_path.as_posix()})")
     return "\n\n".join(lines).strip() + "\n"
 
 
