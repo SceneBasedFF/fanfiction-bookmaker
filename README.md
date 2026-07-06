@@ -118,6 +118,7 @@ $writingRepo = 'C:\path\to\your-writing-repo'
 The compiler writes files into `outputs/` inside your writing repo:
 
 - `outputs/assets/style.css`
+- `outputs/<book-title>.md`
 - `outputs/chapters/ch01-<chapter-name>.html`
 - `outputs/chapters/ch01-<chapter-name>.docx`
 - `outputs/<book-title>.html`

@@ -178,6 +178,8 @@ th, td {
 
 
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -200,7 +202,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         stale_path.unlink(missing_ok=True)
 
     # Remove legacy top-level outputs from older versions.
-    for stale_name in ("book.html", "book.docx", "spellcheck-report.md", "spellcheck-report.json"):
+    for stale_name in ("book.md", "book.html", "book.docx", "spellcheck-report.md", "spellcheck-report.json"):
         (output_root / stale_name).unlink(missing_ok=True)
 
     css_path = assets_output_root / "style.css"
@@ -235,6 +237,8 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
 
     book_markdown = compose_book_markdown(config, chapters)
     book_slug = slugify(config.title, default="book")
+    book_md_path = output_root / f"{book_slug}.md"
+    book_md_path.write_text(book_markdown, encoding="utf-8")
     book_html_path = output_root / f"{book_slug}.html"
     book_docx_path = output_root / f"{book_slug}.docx"
     write_html_document(
@@ -254,7 +258,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         subtitle=config.subtitle,
         language=config.language,
     )
-    generated_files.extend([book_html_path, book_docx_path])
+    generated_files.extend([book_md_path, book_html_path, book_docx_path])
 
     return CompileResult(generated_files=generated_files)
 
@@ -339,7 +343,7 @@ def load_chapter(root: Path, slug: str) -> Chapter:
             Scene(
                 name=scene_name,
                 file=scene_file,
-                text=scene_path.read_text(encoding="utf-8"),
+                text=strip_scene_comments(scene_path.read_text(encoding="utf-8")),
             )
         )
 
@@ -656,6 +660,13 @@ def add_hyperlink(paragraph, text: str, url: str, bold: bool = False, italic: bo
 
 def normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def strip_scene_comments(text: str) -> str:
+    without_html_comments = HTML_COMMENT_RE.sub("", text)
+    lines = without_html_comments.splitlines()
+    filtered_lines = [line for line in lines if not MARKDOWN_COMMENT_LINE_RE.match(line)]
+    return "\n".join(filtered_lines)
 
 
 def read_yaml(path: Path) -> Any:
