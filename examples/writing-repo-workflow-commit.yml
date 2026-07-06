@@ -3,10 +3,18 @@ name: Build books
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - outputs/**
+    paths:
+      - scenes/**
+      - chapters/**
+      - chapters.yml
+      - fanfic.yml
   pull_request:
     branches: [main]
+    paths:
+      - scenes/**
+      - chapters/**
+      - chapters.yml
+      - fanfic.yml
   workflow_dispatch:
 
 permissions:
