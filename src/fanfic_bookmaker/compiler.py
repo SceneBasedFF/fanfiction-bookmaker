@@ -761,6 +761,7 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
     chapter_dir = root / "chapters"
     scene_dir = root / "scenes"
     pending_renames: list[tuple[Path, Path]] = []
+    stale_scene_variants: set[Path] = set()
     chapter_updates: list[tuple[Path, dict[str, Any]]] = []
 
     for chapter_number, slug in enumerate(chapter_order, start=1):
@@ -783,12 +784,18 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
                 raise ValueError(f"{chapter_path} scene #{scene_number} must be a mapping.")
 
             scene_ref = validate_safe_name(str(scene_entry.get("file") or "").strip(), f"scene file in {chapter_path}")
-            current_path = resolve_referenced_file(scene_dir, scene_ref, "md")
+            current_path, stale_variants = resolve_scene_source_file(scene_dir, scene_ref, chapter_number, scene_number)
+            stale_scene_variants.update(stale_variants)
             if not current_path.exists():
                 raise FileNotFoundError(f"Missing scene file: {current_path}")
 
+            scene_source = current_path.read_text(encoding="utf-8")
             base_name = normalize_scene_base_name(current_path.stem)
-            expected_stem = f"C{chapter_number:02d}_S{scene_number:02d}_{base_name}"
+            status_token = infer_scene_status_token(scene_source)
+            prefix = f"C{chapter_number:02d}_S{scene_number:02d}"
+            if status_token:
+                prefix = f"{prefix}_{status_token}"
+            expected_stem = f"{prefix}_{base_name}"
             expected_path = safe_resolve_within(scene_dir, f"{expected_stem}.md")
 
             if current_path.resolve() != expected_path.resolve():
@@ -803,6 +810,9 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
 
     apply_scene_renames(pending_renames)
 
+    for stale_path in stale_scene_variants:
+        stale_path.unlink(missing_ok=True)
+
     for chapter_path, data in chapter_updates:
         chapter_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8")
 
@@ -816,6 +826,50 @@ def normalize_scene_base_name(stem: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9-]+", "-", stem.strip().lower())
     normalized = re.sub(r"-+", "-", normalized).strip("-")
     return validate_safe_name(normalized or "scene", "scene file base name")
+
+
+def resolve_scene_source_file(scene_dir: Path, scene_ref: str, chapter_number: int, scene_number: int) -> tuple[Path, list[Path]]:
+    exact_path = safe_resolve_within(scene_dir, f"{scene_ref}.md")
+    candidates: list[Path] = []
+    if exact_path.exists():
+        candidates.append(exact_path.resolve())
+
+    for candidate in scene_dir.glob(f"*_{scene_ref}.md"):
+        stem = candidate.stem
+        prefix = stem[: -(len(scene_ref) + 1)]
+        if PREFIX_CHAIN_RE.fullmatch(prefix):
+            candidates.append(candidate.resolve())
+
+    unique = sorted(set(candidates))
+    if not unique:
+        return exact_path, []
+    if len(unique) == 1:
+        return unique[0], []
+
+    slot_prefix = f"C{chapter_number:02d}_S{scene_number:02d}_"
+    slot_matches = [path for path in unique if path.stem.startswith(slot_prefix)]
+    if slot_matches:
+        chosen = sorted(slot_matches, key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)[0]
+        stale = [path for path in unique if path != chosen]
+        return chosen, stale
+
+    raise ValueError(
+        f"Ambiguous scene source for '{scene_ref}.md' in {scene_dir}: "
+        + ", ".join(str(path) for path in unique)
+    )
+
+
+def infer_scene_status_token(text: str) -> str:
+    comments = HTML_COMMENT_RE.findall(text)
+    if not comments:
+        return ""
+
+    comments_text = " ".join(comments).lower()
+    if "unwritten" in comments_text:
+        return "UW01"
+    if "incomplete" in comments_text or "wip" in comments_text or "todo" in comments_text:
+        return "IC01"
+    return "IC01"
 
 
 def apply_scene_renames(pairs: list[tuple[Path, Path]]) -> None:
