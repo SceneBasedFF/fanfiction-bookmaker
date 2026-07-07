@@ -20,7 +20,8 @@ from docx.shared import Inches, Pt
 class Scene:
     name: str
     file: str
-    text: str
+    text: str       # comments stripped; used for word counting
+    raw_text: str  # original source text; preserved in .md output
 
 
 @dataclass(slots=True)
@@ -214,7 +215,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     generated_files: list[Path] = [css_path]
 
     for chapter_number, chapter in enumerate(chapters, start=1):
-        chapter_markdown = compose_chapter_markdown(chapter)
+        chapter_markdown = compose_chapter_markdown(chapter, strip_comments=True)
         chapter_title = format_chapter_title(chapter_number, chapter.name)
         chapter_slug = f"ch{chapter_number:02d}-{slugify(chapter.name, default=slugify(chapter.slug))}"
         chapter_html_path = chapter_output_root / f"{chapter_slug}.html"
@@ -238,7 +239,8 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         )
         generated_files.extend([chapter_html_path, chapter_docx_path])
 
-    book_markdown = compose_book_markdown(config, chapters)
+    book_markdown = compose_book_markdown(config, chapters, strip_comments=False)
+    book_markdown_stripped = compose_book_markdown(config, chapters, strip_comments=True)
     book_slug = slugify(config.title, default="book")
     root_readme_path = root / "README.md"
     book_md_path = output_root / f"{book_slug}.md"
@@ -249,7 +251,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     book_html_path = output_root / f"{book_slug}.html"
     book_docx_path = output_root / f"{book_slug}.docx"
     write_html_document(
-        markdown_text=book_markdown,
+        markdown_text=book_markdown_stripped,
         title=config.title,
         output_path=book_html_path,
         css_href="assets/style.css",
@@ -258,7 +260,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         author=config.author,
     )
     write_docx_document(
-        markdown_text=book_markdown,
+        markdown_text=book_markdown_stripped,
         output_path=book_docx_path,
         title=config.title,
         author=config.author,
@@ -347,29 +349,32 @@ def load_chapter(root: Path, slug: str) -> Chapter:
         if not scene_path.exists():
             raise FileNotFoundError(f"Missing scene file: {scene_path}")
 
+        raw = scene_path.read_text(encoding="utf-8")
         scenes.append(
             Scene(
                 name=scene_name,
                 file=scene_file,
-                text=strip_scene_comments(scene_path.read_text(encoding="utf-8")),
+                text=strip_scene_comments(raw),
+                raw_text=raw,
             )
         )
 
     return Chapter(slug=slug, name=name, scenes=scenes)
 
 
-def compose_chapter_markdown(chapter: Chapter) -> str:
+def compose_chapter_markdown(chapter: Chapter, strip_comments: bool = False) -> str:
     lines: list[str] = []
     for scene in chapter.scenes:
         lines.append("<br>")
         lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
         lines.append("<br>")
-        if scene.text.strip():
-            lines.append(scene.text.strip())
+        body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
+        if body.strip():
+            lines.append(body.strip())
     return "\n\n".join(lines).strip() + "\n"
 
 
-def compose_book_markdown(config: StoryConfig, chapters: list[Chapter]) -> str:
+def compose_book_markdown(config: StoryConfig, chapters: list[Chapter], strip_comments: bool = False) -> str:
     lines: list[str] = []
 
     for chapter_number, chapter in enumerate(chapters, start=1):
@@ -378,8 +383,9 @@ def compose_book_markdown(config: StoryConfig, chapters: list[Chapter]) -> str:
             lines.append("<br>")
             lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
             lines.append("<br>")
-            if scene.text.strip():
-                lines.append(scene.text.strip())
+            body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
+            if body.strip():
+                lines.append(body.strip())
     return "\n\n".join(lines).strip() + "\n"
 
 
