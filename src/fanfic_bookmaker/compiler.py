@@ -193,6 +193,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     config_path = safe_resolve_within(root, config_filename)
     config = load_config(config_path)
     chapter_order = load_chapter_order(root / "chapters.yml")
+    normalize_chapter_filenames(root, chapter_order)
     normalize_scene_filenames(root, chapter_order)
     chapters = [load_chapter(root, slug) for slug in chapter_order]
 
@@ -758,6 +759,28 @@ def strip_scene_comments(text: str) -> str:
     return "\n".join(filtered_lines)
 
 
+def normalize_chapter_filenames(root: Path, chapter_order: list[str]) -> None:
+    chapter_dir = root / "chapters"
+    pending_renames: list[tuple[Path, Path]] = []
+    stale_variants: set[Path] = set()
+
+    for chapter_number, slug in enumerate(chapter_order, start=1):
+        safe_slug = validate_safe_name(slug, "chapter slug")
+        current_path, stale = resolve_chapter_source_file(chapter_dir, safe_slug, chapter_number)
+        stale_variants.update(stale)
+        if not current_path.exists():
+            raise FileNotFoundError(f"Missing chapter file: {current_path}")
+
+        expected_path = safe_resolve_within(chapter_dir, f"C{chapter_number:02d}_{safe_slug}.yml")
+        if current_path.resolve() != expected_path.resolve():
+            pending_renames.append((current_path.resolve(), expected_path.resolve()))
+
+    apply_scene_renames(pending_renames)
+
+    for stale_path in stale_variants:
+        stale_path.unlink(missing_ok=True)
+
+
 def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
     chapter_dir = root / "chapters"
     scene_dir = root / "scenes"
@@ -853,6 +876,35 @@ def resolve_scene_source_file(scene_dir: Path, scene_ref: str, chapter_number: i
 
     raise ValueError(
         f"Ambiguous scene source for '{scene_ref}.md' in {scene_dir}: "
+        + ", ".join(str(path) for path in unique)
+    )
+
+
+def resolve_chapter_source_file(chapter_dir: Path, chapter_slug: str, chapter_number: int) -> tuple[Path, list[Path]]:
+    exact_path = safe_resolve_within(chapter_dir, f"{chapter_slug}.yml")
+    candidates: list[Path] = []
+    if exact_path.exists():
+        candidates.append(exact_path.resolve())
+
+    for candidate in chapter_dir.glob(f"*_{chapter_slug}.yml"):
+        if is_matching_prefixed_reference(candidate.name, chapter_slug, "yml"):
+            candidates.append(candidate.resolve())
+
+    unique = sorted(set(candidates))
+    if not unique:
+        return exact_path, []
+    if len(unique) == 1:
+        return unique[0], []
+
+    slot_prefix = f"C{chapter_number:02d}_"
+    slot_matches = [path for path in unique if path.stem.startswith(slot_prefix)]
+    if slot_matches:
+        chosen = sorted(slot_matches, key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)[0]
+        stale = [path for path in unique if path != chosen]
+        return chosen, stale
+
+    raise ValueError(
+        f"Ambiguous chapter source for '{chapter_slug}.yml' in {chapter_dir}: "
         + ", ".join(str(path) for path in unique)
     )
 

@@ -190,6 +190,12 @@ If scenes move within a chapter, move to another chapter, or chapter order chang
 
 Chapter YAML `file` references are also normalized to the stable base name (for example, `scene-name`) so future reordering continues to work.
 
+Chapter YAML files are also normalized each run to match chapter order:
+
+- `chapters/Cxx_chapter-slug.yml`
+
+If chapter order changes in `chapters.yml`, chapter filenames are automatically renumbered on the next compile run.
+
 ### Build succeeds but outputs do not change
 
 Generated files are rewritten each run. If content is unchanged, outputs may look the same.
