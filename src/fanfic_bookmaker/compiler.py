@@ -185,6 +185,7 @@ MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
 PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
 SCENE_PREFIXED_NAME_RE = re.compile(r"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_(?P<base>.+)$")
 WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
+SCENE_VARIANT_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9-]+$")
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -791,11 +792,9 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
 
             scene_source = current_path.read_text(encoding="utf-8")
             base_name = normalize_scene_base_name(current_path.stem)
-            status_token = infer_scene_status_token(scene_source)
             prefix = f"C{chapter_number:02d}_S{scene_number:02d}"
-            if status_token:
-                prefix = f"{prefix}_{status_token}"
-            expected_stem = f"{prefix}_{base_name}"
+            dev_suffix = ".inc" if has_html_comments(scene_source) else ""
+            expected_stem = f"{prefix}_{base_name}{dev_suffix}"
             expected_path = safe_resolve_within(scene_dir, f"{expected_stem}.md")
 
             if current_path.resolve() != expected_path.resolve():
@@ -818,6 +817,7 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
 
 
 def normalize_scene_base_name(stem: str) -> str:
+    stem = SCENE_VARIANT_SUFFIX_RE.sub("", stem)
     match = SCENE_PREFIXED_NAME_RE.match(stem)
     if match and PREFIX_CHAIN_RE.fullmatch(match.group("prefix")):
         stem = match.group("base")
@@ -834,10 +834,8 @@ def resolve_scene_source_file(scene_dir: Path, scene_ref: str, chapter_number: i
     if exact_path.exists():
         candidates.append(exact_path.resolve())
 
-    for candidate in scene_dir.glob(f"*_{scene_ref}.md"):
-        stem = candidate.stem
-        prefix = stem[: -(len(scene_ref) + 1)]
-        if PREFIX_CHAIN_RE.fullmatch(prefix):
+    for candidate in scene_dir.glob(f"*_{scene_ref}*.md"):
+        if is_matching_prefixed_reference(candidate.name, scene_ref, "md"):
             candidates.append(candidate.resolve())
 
     unique = sorted(set(candidates))
@@ -859,17 +857,8 @@ def resolve_scene_source_file(scene_dir: Path, scene_ref: str, chapter_number: i
     )
 
 
-def infer_scene_status_token(text: str) -> str:
-    comments = HTML_COMMENT_RE.findall(text)
-    if not comments:
-        return ""
-
-    comments_text = " ".join(comments).lower()
-    if "unwritten" in comments_text:
-        return "UW01"
-    if "incomplete" in comments_text or "wip" in comments_text or "todo" in comments_text:
-        return "IC01"
-    return "IC01"
+def has_html_comments(text: str) -> bool:
+    return bool(HTML_COMMENT_RE.search(text))
 
 
 def apply_scene_renames(pairs: list[tuple[Path, Path]]) -> None:
@@ -907,17 +896,22 @@ def escape_pipe(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+def is_matching_prefixed_reference(filename: str, reference_name: str, extension: str) -> bool:
+    pattern = re.compile(
+        rf"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_{re.escape(reference_name)}(?:\.[A-Za-z0-9-]+)?\.{re.escape(extension)}$"
+    )
+    return bool(pattern.fullmatch(filename))
+
+
 def resolve_referenced_file(base_dir: Path, reference_name: str, extension: str) -> Path:
     exact_path = safe_resolve_within(base_dir, f"{reference_name}.{extension}")
     if exact_path.exists():
         return exact_path
 
-    pattern = f"*_{reference_name}.{extension}"
+    pattern = f"*_{reference_name}*.{extension}"
     matches: list[Path] = []
     for candidate in base_dir.glob(pattern):
-        stem = candidate.stem
-        prefix = stem[: -(len(reference_name) + 1)]
-        if PREFIX_CHAIN_RE.fullmatch(prefix):
+        if is_matching_prefixed_reference(candidate.name, reference_name, extension):
             matches.append(candidate.resolve())
 
     if not matches:

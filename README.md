@@ -177,16 +177,14 @@ Where:
 - `Sxx` is the scene index inside that chapter file (for example, `S03`)
 - `scene-name` is the base scene name in kebab-case (`-` separated)
 
-If a scene contains HTML comments, a status token is inserted in the filename:
+If a scene contains HTML comments, it is considered in development and gets an `.inc` suffix before `.md`:
 
-- `UW01` when comments mention `unwritten`
-- `IC01` for other commented scenes (for example incomplete or TODO notes)
+- `Cxx_Sxx_scene-name.inc.md`
 
 Examples:
 
 - `C02_S03_scene-name.md` (no HTML comments)
-- `C02_S03_UW01_scene-name.md` (unwritten)
-- `C02_S03_IC01_scene-name.md` (incomplete or TODO)
+- `C02_S03_scene-name.inc.md` (contains HTML comments / in development)
 
 If scenes move within a chapter, move to another chapter, or chapter order changes, files are automatically renamed on the next run so prefixes stay accurate.
 
