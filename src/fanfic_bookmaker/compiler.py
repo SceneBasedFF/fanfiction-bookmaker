@@ -185,7 +185,7 @@ MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
 PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
 SCENE_PREFIXED_NAME_RE = re.compile(r"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_(?P<base>.+)$")
 WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
-SCENE_VARIANT_SUFFIX_RE = re.compile(r"\.[A-Za-z0-9-]+$")
+SCENE_VARIANT_SUFFIX_RE = re.compile(r"(?:\.inc|-INC)$")
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -793,7 +793,7 @@ def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
             scene_source = current_path.read_text(encoding="utf-8")
             base_name = normalize_scene_base_name(current_path.stem)
             prefix = f"C{chapter_number:02d}_S{scene_number:02d}"
-            dev_suffix = ".inc" if has_html_comments(scene_source) else ""
+            dev_suffix = "-INC" if has_html_comments(scene_source) else ""
             expected_stem = f"{prefix}_{base_name}{dev_suffix}"
             expected_path = safe_resolve_within(scene_dir, f"{expected_stem}.md")
 
@@ -898,7 +898,7 @@ def escape_pipe(text: str) -> str:
 
 def is_matching_prefixed_reference(filename: str, reference_name: str, extension: str) -> bool:
     pattern = re.compile(
-        rf"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_{re.escape(reference_name)}(?:\.[A-Za-z0-9-]+)?\.{re.escape(extension)}$"
+        rf"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_{re.escape(reference_name)}(?:-INC|\.[A-Za-z0-9-]+)?\.{re.escape(extension)}$"
     )
     return bool(pattern.fullmatch(filename))
 
