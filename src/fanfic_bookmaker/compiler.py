@@ -183,6 +183,7 @@ SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 MARKDOWN_COMMENT_LINE_RE = re.compile(r"^\s*\[//\]:\s*#\s*\(.*\)\s*$")
 PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
+SCENE_PREFIXED_NAME_RE = re.compile(r"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_(?P<base>.+)$")
 WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
 
 
@@ -191,6 +192,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     config_path = safe_resolve_within(root, config_filename)
     config = load_config(config_path)
     chapter_order = load_chapter_order(root / "chapters.yml")
+    normalize_scene_filenames(root, chapter_order)
     chapters = [load_chapter(root, slug) for slug in chapter_order]
 
     output_root = safe_resolve_within(root, output_dir)
@@ -753,6 +755,98 @@ def strip_scene_comments(text: str) -> str:
     lines = without_html_comments.splitlines()
     filtered_lines = [line for line in lines if not MARKDOWN_COMMENT_LINE_RE.match(line)]
     return "\n".join(filtered_lines)
+
+
+def normalize_scene_filenames(root: Path, chapter_order: list[str]) -> None:
+    chapter_dir = root / "chapters"
+    scene_dir = root / "scenes"
+    pending_renames: list[tuple[Path, Path]] = []
+    chapter_updates: list[tuple[Path, dict[str, Any]]] = []
+
+    for chapter_number, slug in enumerate(chapter_order, start=1):
+        chapter_path = resolve_referenced_file(chapter_dir, slug, "yml")
+        data = read_yaml(chapter_path)
+        if not isinstance(data, dict):
+            raise ValueError(f"{chapter_path} must contain a chapter mapping.")
+
+        chapter_data = data.get("chapter")
+        if not isinstance(chapter_data, dict):
+            raise ValueError(f"{chapter_path} must contain a top-level chapter mapping.")
+
+        scenes_data = chapter_data.get("scenes")
+        if not isinstance(scenes_data, list) or not scenes_data:
+            raise ValueError(f"{chapter_path} must contain a non-empty chapter.scenes list.")
+
+        chapter_changed = False
+        for scene_number, scene_entry in enumerate(scenes_data, start=1):
+            if not isinstance(scene_entry, dict):
+                raise ValueError(f"{chapter_path} scene #{scene_number} must be a mapping.")
+
+            scene_ref = validate_safe_name(str(scene_entry.get("file") or "").strip(), f"scene file in {chapter_path}")
+            current_path = resolve_referenced_file(scene_dir, scene_ref, "md")
+            if not current_path.exists():
+                raise FileNotFoundError(f"Missing scene file: {current_path}")
+
+            base_name = normalize_scene_base_name(current_path.stem)
+            expected_stem = f"C{chapter_number:02d}_S{scene_number:02d}_{base_name}"
+            expected_path = safe_resolve_within(scene_dir, f"{expected_stem}.md")
+
+            if current_path.resolve() != expected_path.resolve():
+                pending_renames.append((current_path.resolve(), expected_path.resolve()))
+
+            if scene_entry.get("file") != base_name:
+                scene_entry["file"] = base_name
+                chapter_changed = True
+
+        if chapter_changed:
+            chapter_updates.append((chapter_path, data))
+
+    apply_scene_renames(pending_renames)
+
+    for chapter_path, data in chapter_updates:
+        chapter_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8")
+
+
+def normalize_scene_base_name(stem: str) -> str:
+    match = SCENE_PREFIXED_NAME_RE.match(stem)
+    if match and PREFIX_CHAIN_RE.fullmatch(match.group("prefix")):
+        stem = match.group("base")
+
+    # Scene base names stay filesystem-friendly and use '-' separators.
+    normalized = re.sub(r"[^A-Za-z0-9-]+", "-", stem.strip().lower())
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    return validate_safe_name(normalized or "scene", "scene file base name")
+
+
+def apply_scene_renames(pairs: list[tuple[Path, Path]]) -> None:
+    if not pairs:
+        return
+
+    deduped: dict[Path, Path] = {}
+    for src, dst in pairs:
+        deduped[src] = dst
+
+    sources = set(deduped.keys())
+    destinations = list(deduped.values())
+    if len(destinations) != len(set(destinations)):
+        raise ValueError("Two or more scenes resolve to the same target filename after normalization.")
+
+    for destination in destinations:
+        if destination.exists() and destination not in sources:
+            raise ValueError(f"Cannot rename scene files: destination already exists and is not managed by rename pass: {destination}")
+
+    temp_mappings: list[tuple[Path, Path]] = []
+    for index, (src, dst) in enumerate(deduped.items(), start=1):
+        if src == dst:
+            continue
+        temp = src.with_name(f".__scene_rename_tmp__{index}_{src.name}")
+        if temp.exists():
+            raise ValueError(f"Temporary rename path already exists: {temp}")
+        src.rename(temp)
+        temp_mappings.append((temp, dst))
+
+    for temp, destination in temp_mappings:
+        temp.rename(destination)
 
 
 def escape_pipe(text: str) -> str:

@@ -165,6 +165,22 @@ Close and reopen PowerShell, then activate venv again.
 - Make sure each chapter slug in `chapters.yml` has a matching file in `chapters/`.
 - Make sure each scene `file` has a matching Markdown file in `scenes/`.
 
+## Automatic Scene File Renaming
+
+During each compile run, scene files are normalized to this naming scheme:
+
+- `Cxx_Sxx_scene-name.md`
+
+Where:
+
+- `Cxx` is the chapter index from `chapters.yml` (for example, `C01`)
+- `Sxx` is the scene index inside that chapter file (for example, `S03`)
+- `scene-name` is the base scene name in kebab-case (`-` separated)
+
+If scenes move within a chapter, move to another chapter, or chapter order changes, files are automatically renamed on the next run so prefixes stay accurate.
+
+Chapter YAML `file` references are also normalized to the stable base name (for example, `scene-name`) so future reordering continues to work.
+
 ### Build succeeds but outputs do not change
 
 Generated files are rewritten each run. If content is unchanged, outputs may look the same.
