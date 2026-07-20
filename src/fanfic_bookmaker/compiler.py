@@ -187,6 +187,7 @@ PREFIX_CHAIN_RE = re.compile(r"^[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*$")
 SCENE_PREFIXED_NAME_RE = re.compile(r"^(?P<prefix>[A-Za-z]+\d+(?:_[A-Za-z]+\d+)*)_(?P<base>.+)$")
 WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
 SCENE_VARIANT_SUFFIX_RE = re.compile(r"(?:\.inc|-INC)$")
+GENERATED_MANIFEST_NAME = ".fanfic-bookmaker-generated.txt"
 
 
 def compile_project(root: Path, config_filename: str, output_dir: str) -> CompileResult:
@@ -204,6 +205,8 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     assets_output_root = output_root / "assets"
     chapter_output_root.mkdir(parents=True, exist_ok=True)
     assets_output_root.mkdir(parents=True, exist_ok=True)
+
+    remove_previous_generated_outputs(output_root)
 
     # Remove stale generated chapter files so renames do not leave old artifacts behind.
     for stale_path in chapter_output_root.glob("*.html"):
@@ -274,6 +277,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
         language=config.language,
     )
     generated_files.extend([root_readme_path, book_md_path, stats_md_path, book_html_path, book_docx_path])
+    write_generated_outputs_manifest(output_root, generated_files)
 
     return CompileResult(generated_files=generated_files)
 
@@ -767,6 +771,36 @@ def strip_scene_comments(text: str) -> str:
     lines = without_html_comments.splitlines()
     filtered_lines = [line for line in lines if not MARKDOWN_COMMENT_LINE_RE.match(line)]
     return "\n".join(filtered_lines)
+
+
+def remove_previous_generated_outputs(output_root: Path) -> None:
+    manifest_path = output_root / GENERATED_MANIFEST_NAME
+    if not manifest_path.exists():
+        return
+
+    for entry in manifest_path.read_text(encoding="utf-8").splitlines():
+        relative_path = entry.strip()
+        if not relative_path:
+            continue
+        candidate = safe_resolve_within(output_root, relative_path)
+        candidate.unlink(missing_ok=True)
+
+    manifest_path.unlink(missing_ok=True)
+
+
+def write_generated_outputs_manifest(output_root: Path, generated_files: list[Path]) -> None:
+    manifest_path = output_root / GENERATED_MANIFEST_NAME
+    managed_relative_paths: list[str] = []
+    for path in generated_files:
+        if path == output_root or not path.is_relative_to(output_root):
+            continue
+        managed_relative_paths.append(path.relative_to(output_root).as_posix())
+
+    unique_paths = list(dict.fromkeys(managed_relative_paths))
+    contents = "\n".join(unique_paths)
+    if contents:
+        contents += "\n"
+    manifest_path.write_text(contents, encoding="utf-8")
 
 
 def normalize_chapter_filenames(root: Path, chapter_order: list[str]) -> None:

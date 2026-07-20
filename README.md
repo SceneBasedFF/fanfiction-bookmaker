@@ -202,3 +202,5 @@ If chapter order changes in `chapters.yml`, chapter filenames are automatically 
 ### Build succeeds but outputs do not change
 
 Generated files are rewritten each run. If content is unchanged, outputs may look the same.
+
+When the `title` changes, old title-based output files are automatically removed on the next run so only the current title outputs remain.
