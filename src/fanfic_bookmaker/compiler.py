@@ -374,8 +374,8 @@ def load_chapter(root: Path, slug: str) -> Chapter:
 
 def compose_chapter_markdown(chapter: Chapter, named_scenes: bool = True, strip_comments: bool = False) -> str:
     lines: list[str] = []
-    for scene in chapter.scenes:
-        lines.extend(render_scene_break(scene.name, named_scenes=named_scenes))
+    for index, scene in enumerate(chapter.scenes):
+        lines.extend(render_scene_break(scene.name, named_scenes=named_scenes, is_first=index == 0))
         body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
         if body.strip():
             lines.append(body.strip())
@@ -387,17 +387,19 @@ def compose_book_markdown(config: StoryConfig, chapters: list[Chapter], strip_co
 
     for chapter_number, chapter in enumerate(chapters, start=1):
         lines.append(f"## {format_chapter_title(chapter_number, chapter.name)}")
-        for scene in chapter.scenes:
-            lines.extend(render_scene_break(scene.name, named_scenes=config.named_scenes))
+        for index, scene in enumerate(chapter.scenes):
+            lines.extend(render_scene_break(scene.name, named_scenes=config.named_scenes, is_first=index == 0))
             body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
             if body.strip():
                 lines.append(body.strip())
     return "\n\n".join(lines).strip() + "\n"
 
 
-def render_scene_break(scene_name: str, named_scenes: bool) -> list[str]:
+def render_scene_break(scene_name: str, named_scenes: bool, is_first: bool) -> list[str]:
     if named_scenes:
         return ["<br>", f"<h4 align=\"center\">{escape(scene_name)}</h4>", "<br>"]
+    if is_first:
+        return []
     return ["<p>&nbsp;</p>", "<hr />", "<p>&nbsp;</p>"]
 
 
