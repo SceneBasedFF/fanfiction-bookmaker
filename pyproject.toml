@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Compile scene-based writing repos into chapter and book HTML/DOCX exports."
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Codex" }]
+authors = [{ name = "CruciareMors" }]
 dependencies = [
   "PyYAML>=6.0.1",
   "markdown>=3.6",

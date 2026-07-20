@@ -61,10 +61,13 @@ writing-repo/
 ### chapters.yml example
 
 ```yaml
+named-scenes: true
 chapters:
   - chapter1
   - chapter2
 ```
+
+Set `named-scenes: false` to suppress scene titles in generated Markdown/HTML/DOCX. When disabled, scene boundaries render as a padded horizontal rule instead of an `h4` heading.
 
 ### chapters/hogwarts.yml example
 

@@ -38,6 +38,7 @@ class StoryConfig:
     description: str = ""
     subtitle: str = ""
     language: str = "en-GB"
+    named_scenes: bool = True
 
 
 @dataclass(slots=True)
@@ -192,7 +193,8 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     root = root.resolve()
     config_path = safe_resolve_within(root, config_filename)
     config = load_config(config_path)
-    chapter_order = load_chapter_order(root / "chapters.yml")
+    chapter_order, named_scenes = load_chapter_order(root / "chapters.yml")
+    config.named_scenes = named_scenes
     normalize_chapter_filenames(root, chapter_order)
     normalize_scene_filenames(root, chapter_order)
     chapters = [load_chapter(root, slug) for slug in chapter_order]
@@ -219,7 +221,7 @@ def compile_project(root: Path, config_filename: str, output_dir: str) -> Compil
     generated_files: list[Path] = [css_path]
 
     for chapter_number, chapter in enumerate(chapters, start=1):
-        chapter_markdown = compose_chapter_markdown(chapter, strip_comments=True)
+        chapter_markdown = compose_chapter_markdown(chapter, named_scenes=config.named_scenes, strip_comments=True)
         chapter_title = format_chapter_title(chapter_number, chapter.name)
         chapter_slug = f"ch{chapter_number:02d}-{slugify(chapter.name, default=slugify(chapter.slug))}"
         chapter_html_path = chapter_output_root / f"{chapter_slug}.html"
@@ -295,7 +297,7 @@ def load_config(path: Path) -> StoryConfig:
     )
 
 
-def load_chapter_order(path: Path) -> list[str]:
+def load_chapter_order(path: Path) -> tuple[list[str], bool]:
     data = read_yaml(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a mapping with a chapters list.")
@@ -303,6 +305,10 @@ def load_chapter_order(path: Path) -> list[str]:
     chapter_list = data.get("chapters")
     if not isinstance(chapter_list, list) or not chapter_list:
         raise ValueError(f"{path} must contain a non-empty chapters list.")
+
+    named_scenes = data.get("named-scenes", True)
+    if not isinstance(named_scenes, bool):
+        raise ValueError(f"{path} field named-scenes must be true or false when present.")
 
     order: list[str] = []
     seen: set[str] = set()
@@ -314,7 +320,7 @@ def load_chapter_order(path: Path) -> list[str]:
             raise ValueError(f"{path} contains a duplicate chapter entry: {slug}")
         seen.add(slug)
         order.append(slug)
-    return order
+    return order, named_scenes
 
 
 def load_chapter(root: Path, slug: str) -> Chapter:
@@ -366,12 +372,10 @@ def load_chapter(root: Path, slug: str) -> Chapter:
     return Chapter(slug=slug, name=name, scenes=scenes)
 
 
-def compose_chapter_markdown(chapter: Chapter, strip_comments: bool = False) -> str:
+def compose_chapter_markdown(chapter: Chapter, named_scenes: bool = True, strip_comments: bool = False) -> str:
     lines: list[str] = []
     for scene in chapter.scenes:
-        lines.append("<br>")
-        lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
-        lines.append("<br>")
+        lines.extend(render_scene_break(scene.name, named_scenes=named_scenes))
         body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
         if body.strip():
             lines.append(body.strip())
@@ -384,13 +388,17 @@ def compose_book_markdown(config: StoryConfig, chapters: list[Chapter], strip_co
     for chapter_number, chapter in enumerate(chapters, start=1):
         lines.append(f"## {format_chapter_title(chapter_number, chapter.name)}")
         for scene in chapter.scenes:
-            lines.append("<br>")
-            lines.append(f"<h4 align=\"center\">{escape(scene.name)}</h4>")
-            lines.append("<br>")
+            lines.extend(render_scene_break(scene.name, named_scenes=config.named_scenes))
             body = strip_scene_comments(scene.raw_text) if strip_comments else scene.raw_text
             if body.strip():
                 lines.append(body.strip())
     return "\n\n".join(lines).strip() + "\n"
+
+
+def render_scene_break(scene_name: str, named_scenes: bool) -> list[str]:
+    if named_scenes:
+        return ["<br>", f"<h4 align=\"center\">{escape(scene_name)}</h4>", "<br>"]
+    return ["<p>&nbsp;</p>", "<hr />", "<p>&nbsp;</p>"]
 
 
 def render_story_readme(config: StoryConfig, story_markdown_relative_path: Path) -> str:
